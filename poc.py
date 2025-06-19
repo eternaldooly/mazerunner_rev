@@ -1,161 +1,97 @@
-from collections import deque
+import struct
+import hashlib
+import time
+import ctypes
+from pwn import *
 
-# The maze as a multiline string
-maze_str = '''
-OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
-OSO O O O O O       O   O O O O O               O O   O   O   O   O O O O     O O     O O         O O
-O O O O O O O OOOOOOO OOO O O O O OOOOO O OOO OOO O O OOO O OOO OOO O O OOO O O O OOOOO OOOOO OOOOO O
-O O   O O       O O   O   O O   O O     O O O   O   O         O   O   O     O O     O           O   O
-O O O O O OOOOO O OOO OOO O O OOOOOOO O O O OOO OOOOOOOOO OOOOOOO O OOOOOOO O OOO O O O O OOOOO O O O
-O   O   O   O   O O   O   O     O   O O O O     O O O O O     O O O O O   O O O   O   O O O O   O O O
-OOOOO O OOOOOOO O O OOO O O O O O O OOOOO OOOOO O O O O O O O O O O O O O OOO OOO OOO O OOO OOOOOOO O
-O O   O   O O O     O   O O O O   O   O O O   O O   O   O O O       O O O O       O O O     O   O O O
-O OOOOOOO O O O OOOOOOO OOO OOOOO OOO O OOO O O O OOO OOO OOO O OOOOO OOO OOOOOOOOO O OOOOOOOOO O O O
-O O   O       O   O       O   O   O   O     O O       O O   O O   O     O     O     O O     O       O
-O OOO O OOOOO O OOO OOOOOOOOOOOOO OOOOOOO OOO OOOOOOO O OOOOO OOO OOO OOOOO OOOOOOO O O OOO OOOOO O O
-O O     O       O   O   O O     O           O O         O   O   O O       O     O     O   O O O O O O
-O OOO O OOO OOO O OOO O O O O O OOO OOOOO OOO O O O OOOOOOO O O O O OOOOO O O OOO OOO O OOO O O O O O
-O   O O   O O O     O O     O O     O     O O   O O     O O   O O   O   O   O   O   O     O O     O O
-O OOOOO OOO O O O OOOOO OOOOO O O OOOOOOO O O O O OOO OOO OOOOOOO OOO O O OOO OOO OOO OOOOO OOO OOOOO
-O     O O   O   O     O     O O O O   O   O   O O   O O   O       O   O   O O O     O   O O O       O
-O O OOO O OOOOOOO OOO OOO O OOOOO OOO O OOOOOOOOOOOOOOOOO OOO OOOOOOO OOOOO OOOOOOO OOOOO OOO O O O O
-O O O   O O         O   O O   O     O     O     O   O   O     O   O O   O       O   O         O O O O
-O OOOOOOO O O OOOOO OOO OOO O O OOOOO O O O O O O O O O OOOOO O OOO OOOOOOOOO OOO O O O OOOOOOOOO OOO
-O         O O     O O O     O O O O   O O O O O   O O O   O O O   O           O   O O O   O O     O O
-O O OOOOO OOO OOOOO O OOO OOOOOOO OOOOOOOOOOOOOOOOO OOOOO O O OOO OOO OOOOO O OOO OOO OOO O OOOOO O O
-O O O   O O       O O   O   O   O             O         O       O O O O   O O O   O     O     O   O O
-O OOOOO O OOOOOOOOOOOOO O OOO OOOOOOO O O OOOOO OOOOO OOOOOOOOO O O OOO OOO OOO OOOOOOOOOOOOOOO OOO O
-O     O       O     O O     O       O O O O     O O     O O O       O         O     O   O       O O O
-O OOO OOOOOOO OOOOO O OOO O O OOOOOOO OOO O OOOOO O OOOOO O O OOO OOOOO OOOOOOOOOOO OOO O O OOO O O O
-O   O O         O O       O   O   O O O     O                 O     O     O O           O O O O     O
-OOOOOOOOOOO O O O O OOO OOOOOOO OOO OOO OOOOO O O OOOOO O OOOOOOO OOO OOOOO OOO OOO OOOOOOO O OOO O O
-O   O   O O O O O     O   O O     O       O O O O     O O     O       O   O   O O O   O   O     O O O
-OOO OOO O OOO O OOOOOOO OOO O O OOO OOO OOO OOOOOOOOOOOOO OOOOOOOOOOOOOOO OOO O O OOO OOO OOO O OOO O
-O O   O   O   O O     O       O O O   O   O O     O     O     O O         O   O O O           O O   O
-O O O O OOOOO OOOOO O OOOOO OOO O OOOOO OOO O OOOOOOO O OOO OOO O OOOOOOO O O O O O OOO O O O OOO OOO
-O   O   O   O O   O O       O O O         O O   O O   O       O         O   O O   O O   O O O O     O
-OOOOOOO OOO O O OOOOO O O O O OOO OOOOO OOO OOO O O O OOOOOOO O O O O OOO O O O O O OOO O OOO OOO O O
-O   O   O O O O O O O O O O   O       O   O         O O O   O   O O O O   O O O O O O   O O O O O O O
-O OOOOO O O OOO O O OOOOO O OOO OOO OOOOOOO OOO OOOOO O OOO OOOOOOO OOOOOOO OOO O OOOOOOOOO O O O O O
-O   O   O           O O   O   O O O O O   O O       O     O O O   O     O O O O O   O O       O   O O
-OOO O OOOOOOO OOO O O OOO OOO OOO O O O OOO O OOO OOO O O O O O OOOOOOOOO OOO OOOOO O OOOOOOO O OOOOO
-O     O   O O   O O       O   O O         O O   O   O O O   O O   O O         O O   O       O O     O
-OOOOO O OOO O O O OOO OOOOOOOOO OOOOO OOOOOOOOOOO OOOOO OOO O O OOO O OOOOOOO O O OOOOO OOOOOOOOO O O
-O O     O O O O O   O         O O   O       O   O O     O O O   O O O       O O   O O           O O O
-O O OOO O O O OOO OOO OOOOOOO O OOO OOOOO O O OOOOOOO OOO O O OOO O OOOOOOOOO OOO O OOOOOOO O OOO OOO
-O   O   O O O   O O     O   O   O O O   O O O           O       O O       O   O       O O   O   O O O
-O O O OOO O O OOOOOOO OOO O O OOO O OOO OOO O O OOO OOO OOOOOOOOO O OOOOOOOOO O OOOOO O O OOO O OOO O
-O O O O   O O O O     O   O O               O O O O O         O   O     O O O O O     O O O   O O   O
-O OOO OOO O OOO OOO OOO O O OOO OOOOOOOOO O OOO O O O OOOOOOO O OOO OOO O O O OOOOOOO O OOOOO OOOOO O
-O O O     O   O   O   O O O O       O O   O   O O O O   O O O   O     O       O   O O   O O   O     O
-O O O O OOO OOOOO O OOO O OOO OOO O O OOOOOOOOOOO OOOOOOO O OOOOOOO OOOOOOO OOO OOO O OOO O OOO OOOOO
-O O   O O O O       O O O     O O O O     O   O O O O     O O         O       O   O O   O       O   O
-OOOOO OOO O OOOOOOOOO OOOOOOOOO OOO O OOOOOOO O O O O OOO O O OOOOO OOO OOOOOOO OOO OOO OOOOO O O OOO
-O       O     O O     O   O O O   O     O   O O   O   O         O     O O O       O         O O     O
-O OOOOO OOO O O O O O O OOO O O O OOO O OOO O O OOO OOO O OOO O OOOOO OOO O OOO OOOOOOO O O OOO O O O
-O   O       O   O O O O   O O   O     O   O       O   O O O O O O     O O O O O O   O   O O O   O O O
-OOOOOOOOOOOOOOO OOOOO OOO O OOOOO OOO OOOOO O O OOO OOO OOO OOOOOOO OOO O O O OOO OOOOO OOOOOOOOOOO O
-O     O O     O       O   O   O O O O       O O   O O O         O     O     O   O   O O O O O O     O
-OOO OOO OOO OOO OOO OOO O O OOO OOO O O OOO O OOOOO O O OOOOOOO O OOOOOOO O O OOOOO O O O O O OOOOO O
-O   O           O       O             O O O O     O O         O O O       O   O O         O         O
-OOO O O OOOOOOO OOO O OOOOO OOO OOOOOOOOO O OOOOO OOOOOOOOOOO OOO O O OOOOO OOO OOOOOOOOO OOO OOO OOO
-O     O O         O O O   O   O     O     O O O O O           O O O O O           O O   O O     O   O
-O OOO OOOOO OOO OOO O O O O OOOOOOOOOOO OOOOO O O O OOOOO OOOOO OOOOO O O OOO OOOOO O O O OOO OOO O O
-O O   O     O   O   O   O O   O     O           O     O       O       O O   O   O     O         O O O
-O OOO O OOO OOO OOO OOOOOOO OOOOO O O OOO OOOOO O OOO OOOOOOOOOOO O O OOO OOOOOOO O OOO OOOOO OOO OOO
-O O   O O   O O O O   O         O O   O   O     O O O O   O   O   O O O   O       O   O     O O     O
-O OOO OOOOOOO O O O O O OOOOOOOOOOOOO O OOO OOOOO O O O OOO OOO O OOOOOOO O OOO OOOOO O OOO OOOOOOOOO
-O O O     O O     O O O   O     O O   O O     O   O     O       O O O   O   O O O O O O O O O       O
-O O O OOO O OOOOOOOOO O O OOO O O OOOOO O OOOOO O O OOOOO O OOO OOO O OOOOOOO O O O OOOOO OOO OOO OOO
-O O     O O       O   O O O   O O       O O     O O     O O O     O       O O       O O       O     O
-OOOOO O OOOOO OOO OOO OOOOOOOOO O OOO O O O OOO OOO OOOOOOOOO OOO O O OOOOO O OOOOO O OOO OOO OOO OOO
-O O   O O O O O   O   O O O       O O O O   O   O O   O   O   O   O O O     O   O       O O     O O O
-O OOOOOOO O O OOOOO O O O O OOO OOO OOO OOOOOOO O OOOOO OOOOOOOOO OOO O O O OOOOOOO OOO O O O OOOOO O
-O O     O   O     O O     O   O   O           O O       O           O   O O O O       O   O O O     O
-O OOOOO O OOO O OOOOOOOOOOOOO O O O OOO O O O O OOOOOOO OOOOOOO OOOOO O OOOOO O O O OOOOOOO O OOO OOO
-O     O O     O       O   O   O O O O O O O O O O O     O   O   O   O O   O   O O O O O   O O   O O O
-O O O O O O OOO OOOOOOO OOOOO OOOOOOO OOO OOOOO O O O OOO OOOOOOO O O OOO OOO OOO O O OOO OOOOO O O O
-O O O O   O O     O   O   O   O   O     O O       O O     O     O O   O O O   O   O O         O     O
-OOO O O OOOOOOOOO O OOOOO O OOO O O OOOOO O OOOOOOO O O OOOOOOO O OOO O OOOOO O OOO OOO O O OOOOOOOOO
-O   O           O O O     O O   O   O O   O O       O O             O     O O O O     O O O O O   O O
-O OOO OOOOOOOOO OOO O O OOOOOOOOOOO O O O OOO OOOOOOOOO OOOOOOO O OOO O O O O O O OOO OOO O O O OOO O
-O   O   O O O     O   O   O O O         O     O O       O   O   O O   O O       O O O   O O   O     O
-O OOOOO O O O O O O OOOOO O O O OOO OOOOOOOOO O O OOOOOOOOO OOO OOOOOOOOO OOOOO OOO O OOO OOOOO OOO O
-O     O O     O O O O   O O     O O     O O     O   O   O     O       O O     O   O               O O
-O OOO OOOOO OOOOOOO OOO O OOOOO O O O OOO O O O OOOOOOO OOO O O O O OOO O OOOOO OOO OOO OOOOOOO OOO O
-O   O     O   O O       O O O   O O O O     O O O   O   O   O   O O O     O O     O O   O       O   O
-O OOOOO OOOOOOO OOOOOOO OOO OOOOO O OOOOOOOOOOOOO OOO OOOOO OOO OOOOOOO OOO O OOO O O O OOOOOOOOOOOOO
-O   O     O O       O     O   O   O     O     O O     O O   O     O     O O   O   O O O O           O
-OOO O O OOO OOO OOOOO OOOOOOO OOO OOO O O OOO O OOO OOO OOOOOOOOO OOO O O OOO OOOOOOO O OOOOOOOOOOO O
-O   O O O   O     O O   O       O O   O   O O O O O           O O   O O O O O   O     O   O       O O
-O O O OOOOO O O OOO O OOO OOOOOOO OOO OOOOO OOO O O OOO OOOOOOO OOOOOOOOO O OOOOOOOOOOOOO OOO OOO O O
-O O O       O O       O O O O   O         O           O O     O                   O     O       O   O
-O OOOOO OOO OOOOOOOOO O O O OOO OOO OOOOO O OOOOOOO OOOOOOOOO OOOOO OOOOOOO O OOOOOOO OOOOOOOOO OOO O
-O O   O   O O O   O   O       O   O O     O O O   O     O           O     O O O     O   O     O O   O
-O OOO OOOOO O O O O OOO OOOOO O OOOOOOOOO O O O OOOOOOO OOOOOOOOOOO O O OOO OOO O OOO OOO OOOOOOOOO O
-O       O O   O O           O     O   O O     O           O O O O O O O O   O O O O O   O O   O   O O
-OOO OOOOO O O O O OOOOO OOOOO OOOOO OOO O O OOO O OOOOOOOOO O O O O O O O OOO O OOO OOO O O O OOO OOO
-O         O O O O     O O           O     O O O O O       O         O O O   O O   O   O O   O O   O O
-O OOO OOOOO OOOOO OOOOOOO OOOOOOOOO O OOO OOO OOOOOOOOO OOO OOO OOOOO O OOO O OOO OOO O OOO OOO OOO O
-O   O O       O   O   O       O O     O       O O   O O   O O   O   O O   O     O O         O   O   O
-O O O OOOOO O O O OOO OOO OOOOO OOOOO O OOOOO O OOO O O O O O OOO O O O OOOOOOO O O OOO OOOOOOO O OOO
-O O O O     O   O     O   O O         O O O           O O O O     O   O       O O   O   O         O O
-O OOO OOO OOOOO OOOOO O OOO O OOOOOOOOO O O O O OOO O O OOOOOOOOOOOOOOOOOOO OOO OOO O OOOOOOO O OOO O
-O O     O   O     O   O   O   O           O O O   O O                         O     O         O    EO
-OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
-'''
+binary_path = "./times"
+elf = ELF(binary_path)
 
-def find_shortest_path(maze_str):
-    # Split the maze into lines and remove empty lines
-    maze_lines = [line for line in maze_str.strip().split('\n') if line.strip()]
-    height = len(maze_lines)
-    width = max(len(line) for line in maze_lines)
+libs = elf.libs
+libc_path = None
+for path in libs:
+    if 'libc.so.6' in path:
+        libc_path = path
+        break
 
-    # Create a grid and locate S and E
-    grid = []
-    start = None
-    end = None
-    for y, line in enumerate(maze_lines):
-        row = list(line.ljust(width))
-        grid.append(row)
-        for x, char in enumerate(row):
-            if char == 'S':
-                start = (y, x)
-            elif char == 'E':
-                end = (y, x)
+if libc_path is None:
+    print("libc 경로를 찾을 수 없습니다.")
+    exit()
 
-    if start is None or end is None:
-        raise ValueError("Start ('S') or end ('E') position not found in the maze.")
+print(f"바이너리가 사용하는 libc 경로: {libc_path}")
 
-    # Define movement directions corresponding to WASD
-    moves = {
-        'W': (-1, 0),
-        'A': (0, -1),
-        'S': (1, 0),
-        'D': (0, 1),
-    }
+libc = ctypes.CDLL(libc_path)
+rand = libc.rand
+rand.restype = ctypes.c_int
+srand = libc.srand
+srand.argtypes = [ctypes.c_uint]
 
-    # BFS to find the shortest path
-    queue = deque()
-    queue.append((start, []))  # position, path
-    visited = set()
-    visited.add(start)
+unk_4020 = bytes([
+    0x66, 0x0C, 0x4C, 0x86, 0xA6, 0x2C, 0x1C, 0x9C,
+    0x1C, 0x66, 0x1C, 0x2C, 0x9C, 0x6C, 0xA6, 0xCC,
+    0xA6, 0x6C, 0x6C, 0xAC, 0xA6, 0xA6, 0x86, 0x4C,
+    0x2C, 0x46, 0xEC, 0x8C, 0xEC, 0x46, 0x8C, 0x9C,
+    0x4C, 0xEC, 0xC6, 0x66, 0x4C, 0x46, 0x86, 0x4C
+])
 
-    while queue:
-        (y, x), path = queue.popleft()
-        if (y, x) == end:
-            return path  # Found the exit
-        for move, (dy, dx) in moves.items():
-            ny, nx = y + dy, x + dx
-            if 0 <= ny < height and 0 <= nx < width:
-                if grid[ny][nx] in (' ', 'E') and (ny, nx) not in visited:
-                    visited.add((ny, nx))
-                    queue.append(((ny, nx), path + [move]))
-    return None  # No path found
+def sub_174A(a1):
+    n = a1
+    n = ((n & 0x55555555) << 1) | ((n >> 1) & 0x55555555)
+    n = ((n & 0x33333333) << 2) | ((n >> 2) & 0x33333333)
+    n = ((n & 0x0F0F0F0F) << 4) | ((n >> 4) & 0x0F0F0F0F)
+    n = ((n & 0x00FF00FF) << 8) | ((n >> 8) & 0x00FF00FF)
+    n = (n << 16) | (n >> 16)
+    return n & 0xFFFFFFFF
 
-path = find_shortest_path(maze_str)
-if path:
-    print("Shortest path to the exit:")
-    print(' -> '.join(path))
-else:
-    print("No path found from 'S' to 'E'.")
+def reverse_process(unk_4020, word_4048_values):
+    v12 = len(unk_4020)
+    s_transformed = bytearray(unk_4020)
+    current_time = int(time.time())
+    time_range = range(current_time - 3600, current_time + 1)
+    for seed in time_range:
+        for word_4048 in word_4048_values:
+            srand(seed)
+            v4 = rand()
+            v7 = v4 + rand()
+            md5_input = struct.pack('<I', v7)
+            v15 = hashlib.md5(md5_input).digest()
+            s = bytearray(s_transformed)
+            for i in range(v12):
+                idx = i
+                s[idx] ^= v15[(4 * i) % 16]
+                s[idx] ^= v15[(4 * i + 1) % 16]
+                s[idx] ^= v15[(4 * i + 2) % 16]
+                s[idx] ^= v15[(4 * i + 3) % 16]
+            for j in range(v12 // 2):
+                idx = j * 2
+                word = struct.unpack('<H', s[idx:idx+2])[0]
+                word ^= word_4048
+                s[idx:idx+2] = struct.pack('<H', word)
+            srand(seed)
+            v5 = rand()
+            v7 = v5 + rand()
+            md5_input = struct.pack('<I', v7)
+            v15 = hashlib.md5(md5_input).digest()
+            for k in range(v12):
+                idx = k
+                s[idx] ^= v15[(4 * k) % 16]
+                s[idx] ^= v15[(4 * k + 1) % 16]
+                s[idx] ^= v15[(4 * k + 2) % 16]
+                s[idx] ^= v15[(4 * k + 3) % 16]
+            for m in range(v12 // 4):
+                idx = m * 4
+                dword = struct.unpack('<I', s[idx:idx+4])[0]
+                dword = sub_174A(dword)
+                s[idx:idx+4] = struct.pack('<I', dword)
+            try:
+                recovered_str = s.decode('utf-8')
+                if all(32 <= ord(c) <= 126 for c in recovered_str):
+                    print(f"시드 {seed}, word_4048 {word_4048}에서 복원된 문자열: {recovered_str}")
+                    return recovered_str.encode('utf-8')  # 문자열을 바이트로 변환
+            except UnicodeDecodeError:
+                continue
+    
+    print("복원에 실패했습니다.")
+    return None
+
+recovered_str = reverse_process(unk_4020, [0x4D2, 0x0])
